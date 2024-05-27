@@ -12,6 +12,8 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
     // 描かれる座標系を座標系Bとする
 
     const refCanvas = useRef<HTMLCanvasElement>(null);
+    const refRange = useRef<HTMLInputElement>(null);
+
     const [isDragging, setIsDragging] = useState<boolean>(false);
     // ドラッグが開始した、座標系Aの座標値
     const [dragStartPoint, setDragStartPoint] = useState<Point|null>(null);
@@ -55,7 +57,6 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
             if (!isDragging) return;
 
             //console.log("mouseMove");
-            console.log(event.button);
 
             // draw
             draw(event);
@@ -74,24 +75,13 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
                 x: ((dragStartPoint && event)? event.x - dragStartPoint.x: 0),
                 y: ((dragStartPoint && event)? event.y - dragStartPoint.y: 0),
             };
-            // マウスの移動量に、今のscaleをかけて、座標系Bの移動量を得る
-            const mouseMoveValueB: Point = {
-                x: mouseMoveValueA.x * scale,
-                y: mouseMoveValueA.y * scale,
-            };
-            // 今の座標系BのcenterPosを計算
-            // centerPoint：canvas中心点(座標系Aの(w/2, h/2)の位置)にある、座標系Bの座標値
-            const curCenterPointB: Point = {
-                x: centerPointBeginningDrag.x - mouseMoveValueB.x,
-                y: centerPointBeginningDrag.y - mouseMoveValueB.y,
-            };
-            console.log({curCenterPointB});
+            const curCenterPointB: Point = (event)? calcCenterPos(mouseMoveValueA): centerPoint;
 
-            // 座標系A→Bのマトリックスを得る
+            // 座標系A・B間のマトリックスを得る
             const {matrixAB} = getMatrixAB(curCenterPointB, scale, canvas.width, canvas.height);
 
-            const center: Point = applyMatrix(matrixAB, {x:canvas.width/2, y:canvas.height/2});
-            setCenterPoint(center);
+            const newCenterPoint: Point = applyMatrix(matrixAB, {x:canvas.width/2, y:canvas.height/2});
+            setCenterPoint(newCenterPoint);
         }
 
         // draw
@@ -103,29 +93,14 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
             //console.log("かくよ！");
 
             //console.log({dragStartPoint});
-            //console.log(centerPoint);
+            //console.log({centerPoint});
 
             // dragStartPointと今の位置から、座標系Aのマウスの移動量を計算する
             const mouseMoveValueA: Point = {
                 x: ((dragStartPoint && event)? event.x - dragStartPoint.x: 0),
                 y: ((dragStartPoint && event)? event.y - dragStartPoint.y: 0),
             };
-            //console.log({mouseMoveValueA});
-            // マウスの移動量に、今のscaleをかけて、座標系Bの移動量を得る
-            const mouseMoveValueB: Point = {
-                x: mouseMoveValueA.x * scale,
-                y: mouseMoveValueA.y * scale,
-            };
-            //console.log({mouseMoveValueB});
-            // 今の座標系BのcenterPointを計算
-            // centerPos：canvas中心点(座標系Aの(w/2, h/2)の位置)にある、座標系Bの座標値
-            const curCenterPointB: Point = (event)
-                ? {
-                    x: centerPointBeginningDrag.x - mouseMoveValueB.x,
-                    y: centerPointBeginningDrag.y - mouseMoveValueB.y,
-                }
-                : centerPoint;
-            //console.log({curCenterPointB});
+            const curCenterPointB = (event)? calcCenterPos(mouseMoveValueA): centerPoint;
 
             // 座標系A→Bのマトリックスを得る
             const {matrixAB, matrixBA} = getMatrixAB(curCenterPointB, scale, canvas.width, canvas.height);
@@ -133,8 +108,8 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
             // 画面の左上と右下の座標系Bの座標を計算
             const leftTop: Point = applyMatrix(matrixAB, {x:0, y:0});
             const rightBottom: Point = applyMatrix(matrixAB, {x:canvas.width, y:canvas.height});
-            //console.log({leftTop});
-            //console.log({rightBottom});
+            // canvasの上下左右の座標系Bの座標値を得て、
+            // その値に沿った絵を描く
 
             // 座標系Bの原点がある、座標系Aの座標値
             const centerPointB: Point = applyMatrix(matrixBA, {x:0, y:0});
@@ -148,15 +123,31 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
             // 中心軸
             context.beginPath();
             context.moveTo(centerPointB.x, centerPointB.y);
-            context.lineTo(centerPointB.x + 100*scale, centerPointB.y);
+            context.lineTo(centerPointB.x + 10*scale, centerPointB.y);
             context.moveTo(centerPointB.x, centerPointB.y);
-            context.lineTo(centerPointB.x, centerPointB.y + 100*scale);
+            context.lineTo(centerPointB.x, centerPointB.y + 10*scale);
             context.stroke();
         }
 
-        //console.log("これからかくのはデフォルト");
+        function calcCenterPos(mouseMoveValueA: Point): Point {
+            //console.log({mouseMoveValueA});
+            // マウスの移動量に、今のscaleで割って、座標系Bの移動量を得る
+            const mouseMoveValueB: Point = {
+                x: mouseMoveValueA.x / scale,
+                y: mouseMoveValueA.y / scale,
+            };
+            //console.log({mouseMoveValueB});
+            // 今の座標系BのcenterPointを計算
+            // centerPos：canvas中心点(座標系Aの(w/2, h/2)の位置)にある、座標系Bの座標値
+            const curCenterPointB: Point = {
+                x: centerPointBeginningDrag.x - mouseMoveValueB.x,
+                y: centerPointBeginningDrag.y - mouseMoveValueB.y,
+            };
+            
+            return curCenterPointB;
+        }
+
         draw();
-        //console.log("デフォルトおわり");
 
         canvas.addEventListener("mousedown", handleMouseDown);
         canvas.addEventListener("mousemove", handleMouseMove);
@@ -166,7 +157,20 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
             canvas.removeEventListener('mousemove', handleMouseMove);
             canvas.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isDragging, centerPoint]);
+    }, [isDragging, centerPoint, scale]);
+
+    // range関係
+    function handleOnChangeRange() {
+        if (!refRange) return;
+
+        const inputRange = refRange.current;
+        if (!inputRange) return;
+
+        const inputValue: number = Number(inputRange.value);
+        const newScale: number = Math.pow(10, inputValue/10)
+        //console.log(newScale);
+        setScale(newScale);
+    }
 
     return (
         <>
@@ -174,31 +178,55 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
                 ref={refCanvas}
                 style={{border: "1px solid #000"}}
             />
+            <input
+                type="range" 
+                ref={refRange}
+                onChange={handleOnChangeRange}
+                min={-10}
+                max={10}
+                defaultValue={0}
+            />
         </>
     );
 }
 
-// 座標系Aから座標系Bへ変換する行列を返す
+// 座標系Aと座標系B間へ変換する行列を返す
 function getMatrixAB(
     centerPos: Point,
     scale: number,
     canvasWidth: number,
     canvasHeight: number
 ): {matrixAB:number[][], matrixBA:number[][]} {
-    // canvasの中心の座標がcenterPosなので、
-    // (-w/2, -h/2)だけ移動している
+    // 座標系B→A（拡大→移動）
+    const mBA = [
+        [scale, 0, canvasWidth/2 - centerPos.x*scale],
+        [0, scale, canvasHeight/2 - centerPos.y*scale],
+        [0, 0, 1],
+    ];
+    const mAB = inverseMatrix(mBA);
+
     return {
-        matrixAB: [
-            [scale, 0, -1*(canvasWidth/2 - centerPos.x)],
-            [0, scale, -1*(canvasHeight/2 - centerPos.y)],
-            [0, 0, 1]
-        ],
-        matrixBA: [
-            [1/scale, 0, (canvasWidth/2 - centerPos.x)],
-            [0, 1/scale, (canvasHeight/2 - centerPos.y)],
-            [0, 0, 1]
-        ]
+        matrixAB: mAB,
+        matrixBA: mBA,
     };
+}
+
+function inverseMatrix(matrix: number[][]): number[][] {
+    const [a, b, c] = matrix[0];
+    const [d, e, f] = matrix[1];
+    const [g, h, i] = matrix[2];
+
+    const det = a * e * i - a * f * h - b * d * i + b * f * g + c * d * h - c * e * g;
+
+    if (det === 0) {
+        throw new Error("Matrix is not invertible");
+    }
+
+    return [
+        [(e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det],
+        [(f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det],
+        [(d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det]
+    ];
 }
 
 function applyMatrix(matrix: number[][], p: Point): Point {
