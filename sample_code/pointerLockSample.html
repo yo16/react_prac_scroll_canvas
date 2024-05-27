@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pointer Lock Example</title>
+    <style>
+        body {
+            height: 100vh;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f0f0f0;
+        }
+        #canvas {
+            width: 800px;
+            height: 600px;
+            background-color: #ffffff;
+            border: 1px solid #000000;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        const canvas = document.getElementById('canvas');
+        let isMouseDown = false;
+
+        canvas.requestPointerLock = canvas.requestPointerLock || 
+                                    canvas.mozRequestPointerLock || 
+                                    canvas.webkitRequestPointerLock;
+
+        document.exitPointerLock = document.exitPointerLock || 
+                                   document.mozExitPointerLock || 
+                                   document.webkitExitPointerLock;
+
+        canvas.onclick = function() {
+            canvas.requestPointerLock();
+        };
+
+        document.addEventListener('pointerlockchange', lockChangeAlert, false);
+        document.addEventListener('mozpointerlockchange', lockChangeAlert, false);
+        document.addEventListener('webkitpointerlockchange', lockChangeAlert, 
+            false);
+
+        function lockChangeAlert() {
+            if (document.pointerLockElement === canvas || 
+                document.mozPointerLockElement === canvas || 
+                document.webkitPointerLockElement === canvas) {
+                console.log('The pointer lock status is now locked');
+                document.addEventListener('mousemove', updatePosition, false);
+                document.addEventListener('mousedown', onMouseDown, false);
+                document.addEventListener('mouseup', onMouseUp, false);
+            } else {
+                console.log('The pointer lock status is now unlocked');
+                document.removeEventListener('mousemove', updatePosition, 
+                    false);
+                document.removeEventListener('mousedown', onMouseDown, false);
+                document.removeEventListener('mouseup', onMouseUp, false);
+            }
+        }
+
+        function updatePosition(e) {
+            if (!isMouseDown) {
+                console.log('Mouse is not pressed');
+            }
+        }
+
+        function onMouseDown(e) {
+            isMouseDown = true;
+            console.log('Mouse down');
+        }
+
+        function onMouseUp(e) {
+            isMouseDown = false;
+            console.log('Mouse up');
+        }
+    </script>
+</body>
+</html>
