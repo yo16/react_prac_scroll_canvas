@@ -79,6 +79,8 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
 
         // mouseUp
         function handleMouseUp(event: MouseEvent) {
+            if (!isDragging) return;
+            
             // originBinAを移動する
             const finalOriginBinA = getOriginBinADragging({x: event.clientX, y: event.clientY});
             if (finalOriginBinA){
@@ -233,12 +235,14 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
         canvas.addEventListener("mousedown", handleMouseDown);
         canvas.addEventListener("mousemove", handleMouseMove);
         canvas.addEventListener("mouseup", handleMouseUp);
+        canvas.addEventListener("mouseleave", handleMouseUp);
         canvas.addEventListener("wheel", handleWheelScroll, { passive: true });
         range.addEventListener("input", handleOnChangeRange);
         return () => {
             canvas.removeEventListener('mousedown', handleMouseDown);
             canvas.removeEventListener('mousemove', handleMouseMove);
             canvas.removeEventListener('mouseup', handleMouseUp);
+            canvas.removeEventListener('mouseleave', handleMouseUp);
             canvas.removeEventListener('wheel', handleWheelScroll);
             range.removeEventListener('input', handleOnChangeRange);
         };
@@ -262,7 +266,6 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
                 min={SCALE_MM.min}
                 max={SCALE_MM.max}
                 defaultValue={0}
-                onChange={()=>{console.log("change!!");}}
             />
         </>
     )
