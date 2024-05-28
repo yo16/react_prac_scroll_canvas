@@ -1,5 +1,10 @@
 import { useRef, useEffect, useState } from "react";
 
+const SCALE_MM = {
+    min: -10,
+    max: 10,
+};
+
 type Point = {
     x: number;
     y: number;
@@ -11,20 +16,23 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
     // canvasの座標系を座標系A、
     // 描かれる座標系を座標系Bとする
 
-    const refCanvas = useRef<HTMLCanvasElement>(null);
-    const refRange = useRef<HTMLInputElement>(null);
+    // 座標系Bの原点が、座標系Aのどこにあるかを示す値
+    // ドラッグ中は変更せず、mouseupで確定したら変更する
+    const [originBinA, setOriginBinA] = useState<Point>({x: 10, y:10});
+    // Aに対するBの拡大率．Bの方が大きい時、１より大
+    const [scale, setScale] = useState<number>(1.0);
 
+    // ドラッグしている状態
     const [isDragging, setIsDragging] = useState<boolean>(false);
-    // ドラッグが開始した、座標系Aの座標値
+    // ドラッグの開始位置
     const [dragStartPoint, setDragStartPoint] = useState<Point|null>(null);
-    // 平行移動と拡大縮小のみ。座標系の向きは一緒で、回転はなし。
-    // canvas中心点(座標系Aの(w/2, h/2)の位置)にある、座標系Bの座標値
-    const [centerPoint, setCenterPoint] = useState<Point>({x:0, y:0});
-    // ドラッグが開始したときの、centerPointの値
-    const [centerPointBeginningDrag, setCenterPointBeginningDrag] = useState<Point>({x:0, y:0});
-    // 座標系Aに対する座標系Bのスケール（Bの方が大きいとき1より大）
-    const [scale, setScale] = useState<number>(prop.scale? prop.scale: 1.0);
+    
 
+    // canvasのref
+    const refCanvas = useRef<HTMLCanvasElement>(null);
+    // inputのref
+    const refRange = useRef<HTMLInputElement>(null);
+    
     // 初期化処理
     useEffect(() => {
         if (!refCanvas) return;
@@ -35,141 +43,193 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
         canvas.height = 400;
     },[]);
 
-    // マウスハンドル
+    // 操作系
     useEffect(() => {
+        // contextを取得
         if (!refCanvas) return;
         const canvas = refCanvas.current;
         if (!canvas) return;
         const context = canvas.getContext("2d");
         if (!context) return;
 
-        // mouse down
-        function handleMouseDown(event: MouseEvent){
-            console.log("mouseDown");
+        // mouseDown
+        function handleMouseDown(event: MouseEvent) {
             setIsDragging(true);
             setDragStartPoint({x: event.clientX, y: event.clientY});
-            setCenterPointBeginningDrag({x: centerPoint.x, y: centerPoint.y});
+            draw(originBinA);
+            //console.log("mousedown");
         }
 
-        // mouse move
-        function handleMouseMove(event: MouseEvent){
-            if (!context) return;
+        // mouseMove
+        function handleMouseMove(event: MouseEvent) {
             if (!isDragging) return;
+            //console.log("mousemove");
 
-            //console.log("mouseMove");
+            // 今のOriginB
+            const movingOriginBinA = getOriginBinADragging({x: event.clientX, y: event.clientY}); 
+            //console.log(movingOriginBinA);
+            if (!movingOriginBinA) return;
 
-            // draw
-            draw(event);
+            // 描画
+            draw(movingOriginBinA)
         }
 
-        // mouse up
-        function handleMouseUp(event: MouseEvent){
-            console.log("mouseUP");
+        // mouseUp
+        function handleMouseUp(event: MouseEvent) {
+            // originBinAを移動する
+            const finalOriginBinA = getOriginBinADragging({x: event.clientX, y: event.clientY});
+            if (finalOriginBinA){
+                setOriginBinA(finalOriginBinA);
+            } else {
+                // 通常考えられないが、なにかあったら原点に戻す
+                console.error("finalOriginBinA is not found");
+                setOriginBinA({x:0, y:0});
+            }
+
             setIsDragging(false);
             setDragStartPoint(null);
-
-            if (!canvas) return;
-
-            // dragStartPointと今の位置から、座標系Aのマウスの移動量を計算する
-            const mouseMoveValueA: Point = {
-                x: ((dragStartPoint && event)? event.x - dragStartPoint.x: 0),
-                y: ((dragStartPoint && event)? event.y - dragStartPoint.y: 0),
-            };
-            const curCenterPointB: Point = (event)? calcCenterPos(mouseMoveValueA): centerPoint;
-
-            // 座標系A・B間のマトリックスを得る
-            const {matrixAB} = getMatrixAB(curCenterPointB, scale, canvas.width, canvas.height);
-
-            const newCenterPoint: Point = applyMatrix(matrixAB, {x:canvas.width/2, y:canvas.height/2});
-            setCenterPoint(newCenterPoint);
         }
 
-        // draw
-        // eventがあるときは、centerPointBeginningDragに、mouseMoveを加算して描画
-        // eventがnullのときは、今のmouseMoveはゼロで、centerPointに従って描画
-        function draw(event?: MouseEvent){
+        // wheel
+        function handleWheelScroll(event: WheelEvent) {
+            if (!refRange) return;
+            const inputRange = refRange.current;
+            if (!inputRange) return;
+
+            // マウスホイールの方向による更新値
+            const wheelUp = (event.deltaY<0)? 1: -1;
+            
+            // 今のinputRangeから１つ上げ下げする
+            const newInputRangeValue
+                = Number(inputRange.value) + wheelUp;
+            inputRange.value = String(newInputRangeValue);
+
+            // inputRangeValueからscale値に変換
+            const newScale: number = rangeValue2Scale(
+                newInputRangeValue
+            );
+
+            // マウス位置を中心に拡大縮小
+            zoomAround(
+                newScale,
+                {x: event.clientX, y: event.clientY}
+            );
+        }
+
+        // ドラッグ中のoriginBinAを返す
+        function getOriginBinADragging(curMousePos: Point): Point|void{
+            if (!isDragging) return;
+            if (!dragStartPoint) return;
+
+            return {
+                x: originBinA.x - dragStartPoint.x + curMousePos.x,
+                y: originBinA.y - dragStartPoint.y + curMousePos.y,
+            };
+        }
+
+        // 座標系Bの要素を座標系Aで描画
+        function draw(paramOriginBinA?: Point) {
             if (!canvas) return;
             if (!context) return;
-            //console.log("かくよ！");
 
-            //console.log({dragStartPoint});
-            //console.log({centerPoint});
-
-            // dragStartPointと今の位置から、座標系Aのマウスの移動量を計算する
-            const mouseMoveValueA: Point = {
-                x: ((dragStartPoint && event)? event.x - dragStartPoint.x: 0),
-                y: ((dragStartPoint && event)? event.y - dragStartPoint.y: 0),
-            };
-            const curCenterPointB = (event)? calcCenterPos(mouseMoveValueA): centerPoint;
-
-            // 座標系A→Bのマトリックスを得る
-            const {matrixAB, matrixBA} = getMatrixAB(curCenterPointB, scale, canvas.width, canvas.height);
-
-            // 画面の左上と右下の座標系Bの座標を計算
-            const leftTop: Point = applyMatrix(matrixAB, {x:0, y:0});
-            const rightBottom: Point = applyMatrix(matrixAB, {x:canvas.width, y:canvas.height});
-            // canvasの上下左右の座標系Bの座標値を得て、
-            // その値に沿った絵を描く
-
-            // 座標系Bの原点がある、座標系Aの座標値
-            const centerPointB: Point = applyMatrix(matrixBA, {x:0, y:0});
-            //console.log({centerPointB});
-            
-            // --- 描画開始 ---
+            // 座標計算
+            //const { mBA } = getMatrix();
+            // 今の座標系Bの原点位置
+            const curOriginBinA = paramOriginBinA? paramOriginBinA: originBinA;
 
             // 初期化
             context.clearRect(0, 0, canvas.width, canvas.height);
 
             // 中心軸
             context.beginPath();
-            context.moveTo(centerPointB.x, centerPointB.y);
-            context.lineTo(centerPointB.x + 10*scale, centerPointB.y);
-            context.moveTo(centerPointB.x, centerPointB.y);
-            context.lineTo(centerPointB.x, centerPointB.y + 10*scale);
+            context.moveTo(curOriginBinA.x, curOriginBinA.y);
+            context.lineTo(curOriginBinA.x+10*scale, curOriginBinA.y);
+            context.moveTo(curOriginBinA.x, curOriginBinA.y);
+            context.lineTo(curOriginBinA.x, curOriginBinA.y+10*scale);
             context.stroke();
         }
 
-        function calcCenterPos(mouseMoveValueA: Point): Point {
-            //console.log({mouseMoveValueA});
-            // マウスの移動量に、今のscaleで割って、座標系Bの移動量を得る
-            const mouseMoveValueB: Point = {
-                x: mouseMoveValueA.x / scale,
-                y: mouseMoveValueA.y / scale,
-            };
-            //console.log({mouseMoveValueB});
-            // 今の座標系BのcenterPointを計算
-            // centerPos：canvas中心点(座標系Aの(w/2, h/2)の位置)にある、座標系Bの座標値
-            const curCenterPointB: Point = {
-                x: centerPointBeginningDrag.x - mouseMoveValueB.x,
-                y: centerPointBeginningDrag.y - mouseMoveValueB.y,
-            };
-            
-            return curCenterPointB;
-        }
-
+        // 描画
         draw();
 
         canvas.addEventListener("mousedown", handleMouseDown);
         canvas.addEventListener("mousemove", handleMouseMove);
         canvas.addEventListener("mouseup", handleMouseUp);
+        canvas.addEventListener("wheel", handleWheelScroll, { passive: true });
         return () => {
             canvas.removeEventListener('mousedown', handleMouseDown);
             canvas.removeEventListener('mousemove', handleMouseMove);
             canvas.removeEventListener('mouseup', handleMouseUp);
+            canvas.removeEventListener('wheel', handleWheelScroll);
         };
-    }, [isDragging, centerPoint, scale]);
+    }, [isDragging, originBinA, dragStartPoint, scale]);
 
-    // range関係
-    function handleOnChangeRange() {
+    //// 座標系A、B間のmatrixを取得する
+    //function getMatrix(): {matrixAB: number[][], matrixBA: number[][]} {
+    //    // B→Aの変換
+    //    // 原点移動→拡大
+    //    const mBA = [
+    //        [originBinA.x, 0, originBinA.x * scale],
+    //        [0, originBinA.y, originBinA.y * scale],
+    //        [0, 0, 1],
+    //    ];
+    //    const mAB = inverseMatrix(mBA);
+    //
+    //    return {
+    //        matrixAB: mAB,
+    //        matrixBA: mBA,
+    //    };
+    //}
+
+    function handleOnChangeRange(){
         if (!refRange) return;
 
         const inputRange = refRange.current;
         if (!inputRange) return;
 
-        const inputValue: number = Number(inputRange.value);
-        const newScale: number = Math.pow(10, inputValue/10)
-        //console.log(newScale);
+        // 新しいスケール値
+        const newScale: number = rangeValue2Scale(
+            Number(inputRange.value)
+        );
+
+        // 拡大縮小処理
+        zoomAround(newScale);
+    }
+
+    // 新しいscale値によるoriginBinAの値の更新と、ついでにscale値の更新
+    function zoomAround(newScale: number, propCenter?: Point){
+        if (!refCanvas) return;
+        if (!refCanvas.current) return;
+
+        // 拡大中心点（座標系A）
+        const zoomCenter: Point = propCenter
+            ? propCenter
+            : {x: refCanvas.current.width/2, y: refCanvas.current.height/2}
+            //: {x: 10, y: 10}
+        ;
+
+        // 拡大中心点→originBinAを、newScale/scale 倍した先が新しいoriginBinAとなる
+
+        // zoomCenter to OriginBinA ベクトル
+        const vecZC2OB: Point = {
+            x: (originBinA.x - zoomCenter.x) * newScale / scale,
+            y: (originBinA.y - zoomCenter.y) * newScale / scale,
+        };
+
+        // 新しいoriginBinA
+        const newOriginBinA = {
+            x: zoomCenter.x + vecZC2OB.x,
+            y: zoomCenter.y + vecZC2OB.y,
+        };
+        //console.log(newOriginBinA);
+
+        setOriginBinA(newOriginBinA);
         setScale(newScale);
+    }
+
+    // スライドバーのスケール値から、座標系Bのscale値へ変換する
+    function rangeValue2Scale(value: number) {
+        return Math.pow(10, Number(value)/10);
     }
 
     return (
@@ -179,37 +239,17 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
                 style={{border: "1px solid #000"}}
             />
             <input
-                type="range" 
+                type="range"
                 ref={refRange}
                 onChange={handleOnChangeRange}
-                min={-10}
-                max={10}
+                min={SCALE_MM.min}
+                max={SCALE_MM.max}
                 defaultValue={0}
             />
         </>
-    );
+    )
 }
 
-// 座標系Aと座標系B間へ変換する行列を返す
-function getMatrixAB(
-    centerPos: Point,
-    scale: number,
-    canvasWidth: number,
-    canvasHeight: number
-): {matrixAB:number[][], matrixBA:number[][]} {
-    // 座標系B→A（拡大→移動）
-    const mBA = [
-        [scale, 0, canvasWidth/2 - centerPos.x*scale],
-        [0, scale, canvasHeight/2 - centerPos.y*scale],
-        [0, 0, 1],
-    ];
-    const mAB = inverseMatrix(mBA);
-
-    return {
-        matrixAB: mAB,
-        matrixBA: mBA,
-    };
-}
 
 function inverseMatrix(matrix: number[][]): number[][] {
     const [a, b, c] = matrix[0];
