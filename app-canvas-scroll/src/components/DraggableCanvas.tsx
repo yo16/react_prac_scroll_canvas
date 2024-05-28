@@ -51,6 +51,9 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
         if (!canvas) return;
         const context = canvas.getContext("2d");
         if (!context) return;
+        if (!refRange) return;
+        const range = refRange.current;
+        if (!range) return;
 
         // mouseDown
         function handleMouseDown(event: MouseEvent) {
@@ -115,6 +118,22 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
                 {x: event.clientX, y: event.clientY}
             );
         }
+    
+        // rangeChanged
+        function handleOnChangeRange(){
+            if (!refRange) return;
+    
+            const inputRange = refRange.current;
+            if (!inputRange) return;
+    
+            // 新しいスケール値
+            const newScale: number = rangeValue2Scale(
+                Number(inputRange.value)
+            );
+    
+            // 拡大縮小処理
+            zoomAround(newScale);
+        }
 
         // ドラッグ中のoriginBinAを返す
         function getOriginBinADragging(curMousePos: Point): Point|void{
@@ -132,10 +151,11 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
             if (!canvas) return;
             if (!context) return;
 
-            // 座標計算
-            //const { mBA } = getMatrix();
             // 今の座標系Bの原点位置
             const curOriginBinA = paramOriginBinA? paramOriginBinA: originBinA;
+
+            // 座標計算
+            const { matrixBA } = getMatrix(curOriginBinA);
 
             // 初期化
             context.clearRect(0, 0, canvas.width, canvas.height);
@@ -147,6 +167,64 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
             context.moveTo(curOriginBinA.x, curOriginBinA.y);
             context.lineTo(curOriginBinA.x, curOriginBinA.y+10*scale);
             context.stroke();
+            
+            // （試行）
+            // 座標系Bの(-10, 0)の位置にR=10の円を描く
+            const posCircleCenter: Point = applyMatrix(matrixBA, {x:10, y:20});
+            context.fillStyle = "#f00";
+            context.beginPath();
+            context.arc(posCircleCenter.x, posCircleCenter.y, 5*scale, 0, Math.PI*2);
+            context.fill();
+        }
+
+        // 座標系A、B間のmatrixを取得する
+        function getMatrix(currentOriginBinA?: Point): {matrixAB: number[][], matrixBA: number[][]} {
+            const curOriginBinA = currentOriginBinA? currentOriginBinA: originBinA;
+            
+            // B→Aの変換
+            // 原点移動→拡大
+            const mBA = [
+                [scale, 0, curOriginBinA.x],
+                [0, scale, curOriginBinA.y],
+                [0, 0, 1],
+            ];
+            const mAB = inverseMatrix(mBA);
+        
+            return {
+                matrixAB: mAB,
+                matrixBA: mBA,
+            };
+        }
+    
+        // 新しいscale値によるoriginBinAの値の更新と、ついでにscale値の更新
+        function zoomAround(newScale: number, propCenter?: Point){
+            if (!refCanvas) return;
+            if (!refCanvas.current) return;
+    
+            // 拡大中心点（座標系A）
+            const zoomCenter: Point = propCenter
+                ? propCenter
+                : {x: refCanvas.current.width/2, y: refCanvas.current.height/2}
+                //: {x: 10, y: 10}
+            ;
+    
+            // 拡大中心点→originBinAを、newScale/scale 倍した先が新しいoriginBinAとなる
+    
+            // zoomCenter to OriginBinA ベクトル
+            const vecZC2OB: Point = {
+                x: (originBinA.x - zoomCenter.x) * newScale / scale,
+                y: (originBinA.y - zoomCenter.y) * newScale / scale,
+            };
+    
+            // 新しいoriginBinA
+            const newOriginBinA = {
+                x: zoomCenter.x + vecZC2OB.x,
+                y: zoomCenter.y + vecZC2OB.y,
+            };
+            //console.log(newOriginBinA);
+    
+            setOriginBinA(newOriginBinA);
+            setScale(newScale);
         }
 
         // 描画
@@ -156,76 +234,16 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
         canvas.addEventListener("mousemove", handleMouseMove);
         canvas.addEventListener("mouseup", handleMouseUp);
         canvas.addEventListener("wheel", handleWheelScroll, { passive: true });
+        range.addEventListener("input", handleOnChangeRange);
         return () => {
             canvas.removeEventListener('mousedown', handleMouseDown);
             canvas.removeEventListener('mousemove', handleMouseMove);
             canvas.removeEventListener('mouseup', handleMouseUp);
             canvas.removeEventListener('wheel', handleWheelScroll);
+            range.removeEventListener('input', handleOnChangeRange);
         };
     }, [isDragging, originBinA, dragStartPoint, scale]);
 
-    //// 座標系A、B間のmatrixを取得する
-    //function getMatrix(): {matrixAB: number[][], matrixBA: number[][]} {
-    //    // B→Aの変換
-    //    // 原点移動→拡大
-    //    const mBA = [
-    //        [originBinA.x, 0, originBinA.x * scale],
-    //        [0, originBinA.y, originBinA.y * scale],
-    //        [0, 0, 1],
-    //    ];
-    //    const mAB = inverseMatrix(mBA);
-    //
-    //    return {
-    //        matrixAB: mAB,
-    //        matrixBA: mBA,
-    //    };
-    //}
-
-    function handleOnChangeRange(){
-        if (!refRange) return;
-
-        const inputRange = refRange.current;
-        if (!inputRange) return;
-
-        // 新しいスケール値
-        const newScale: number = rangeValue2Scale(
-            Number(inputRange.value)
-        );
-
-        // 拡大縮小処理
-        zoomAround(newScale);
-    }
-
-    // 新しいscale値によるoriginBinAの値の更新と、ついでにscale値の更新
-    function zoomAround(newScale: number, propCenter?: Point){
-        if (!refCanvas) return;
-        if (!refCanvas.current) return;
-
-        // 拡大中心点（座標系A）
-        const zoomCenter: Point = propCenter
-            ? propCenter
-            : {x: refCanvas.current.width/2, y: refCanvas.current.height/2}
-            //: {x: 10, y: 10}
-        ;
-
-        // 拡大中心点→originBinAを、newScale/scale 倍した先が新しいoriginBinAとなる
-
-        // zoomCenter to OriginBinA ベクトル
-        const vecZC2OB: Point = {
-            x: (originBinA.x - zoomCenter.x) * newScale / scale,
-            y: (originBinA.y - zoomCenter.y) * newScale / scale,
-        };
-
-        // 新しいoriginBinA
-        const newOriginBinA = {
-            x: zoomCenter.x + vecZC2OB.x,
-            y: zoomCenter.y + vecZC2OB.y,
-        };
-        //console.log(newOriginBinA);
-
-        setOriginBinA(newOriginBinA);
-        setScale(newScale);
-    }
 
     // スライドバーのスケール値から、座標系Bのscale値へ変換する
     function rangeValue2Scale(value: number) {
@@ -241,15 +259,14 @@ export function DraggableCanvas(prop: DraggableCanvasProp){
             <input
                 type="range"
                 ref={refRange}
-                onChange={handleOnChangeRange}
                 min={SCALE_MM.min}
                 max={SCALE_MM.max}
                 defaultValue={0}
+                onChange={()=>{console.log("change!!");}}
             />
         </>
     )
 }
-
 
 function inverseMatrix(matrix: number[][]): number[][] {
     const [a, b, c] = matrix[0];
