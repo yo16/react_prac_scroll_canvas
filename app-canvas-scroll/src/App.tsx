@@ -1,6 +1,7 @@
 import React from 'react';
 import './App.css';
 
+import { DraggableCanvas1 } from './components/DraggableCanvas1';
 import { DraggableCanvas } from './components/DraggableCanvas';
 
 //import { useRef } from 'react';
