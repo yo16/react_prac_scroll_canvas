@@ -57,14 +57,14 @@ export function DraggableCanvas() {
         draw();
 
         function handleMouseDown(event: MouseEvent){
-            console.log("mouseDown");
+            //console.log("mouseDown");
 
             // ドラッグ開始
             isDragging = true;
             dragStartPoint = {x: event.clientX, y: event.clientY};
         }
         function handleMouseMove(event: MouseEvent){
-            console.log("mouseMove");
+            //console.log("mouseMove");
             if (!isDragging) return;
 
             // 今のoriginBを取得
@@ -75,7 +75,7 @@ export function DraggableCanvas() {
             draw(movingOriginB)
         }
         function handleMouseUp(event: MouseEvent){
-            console.log("mouseUp");
+            //console.log("mouseUp");
 
             // 今のoriginBを取得
             const finalOriginB = getOriginBDragging({x: event.clientX, y: event.clientY}); 
@@ -108,7 +108,7 @@ export function DraggableCanvas() {
                 newScale,
                 {x: event.clientX, y: event.clientY}
             );
-            
+
             // 再描画
             draw();
         }
